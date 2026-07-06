@@ -1,5 +1,6 @@
 """Webhook de WhatsApp Cloud API + endpoints de administración."""
 import json
+import logging
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -14,6 +15,7 @@ from app.schedule import EstadoHorario, ahora_local, evaluar_horario
 from app.whatsapp import descargar_foto, enviar_texto
 
 Base.metadata.create_all(bind=engine)
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="Reporte Cuadrillas", version="1.0.0")
 
@@ -37,8 +39,13 @@ def recibir(payload: dict, db: Session = Depends(get_db)):
     except (KeyError, IndexError):
         return {"status": "ignored"}
 
+    logger.info(f"Webhook: {len(mensajes)} mensaje(s) recibido(s)")
     for msg in mensajes:
-        _procesar_mensaje(msg, db)
+        logger.info(f"Mensaje de {msg.get('from')} tipo {msg.get('type')}")
+        try:
+            _procesar_mensaje(msg, db)
+        except Exception as e:
+            logger.error(f"ERROR procesando mensaje: {e}")
     return {"status": "ok"}
 
 
