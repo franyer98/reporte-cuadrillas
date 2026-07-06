@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_VERIFY_TOKEN: str = "cambia-esto"
     ANTHROPIC_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
     LLM_ENABLED: bool = True  # False = modo validación gratuito (sin corrección IA)
     TIMEZONE: str = "America/Bogota"
     REPORT_CUTOFF: str = "18:30"
