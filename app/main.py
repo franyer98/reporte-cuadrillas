@@ -15,6 +15,14 @@ from app.schedule import EstadoHorario, ahora_local, evaluar_horario
 from app.whatsapp import descargar_foto, enviar_texto
 
 Base.metadata.create_all(bind=engine)
+
+# Migración ligera: agregar columna de datos binarios si la tabla ya existía
+try:
+    from sqlalchemy import text as _text
+    with engine.begin() as _conn:
+        _conn.execute(_text("ALTER TABLE fotos ADD COLUMN IF NOT EXISTS datos BYTEA"))
+except Exception:
+    pass  # SQLite u otra situación: create_all ya la incluye en tablas nuevas
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="Reporte Cuadrillas", version="1.0.0")
@@ -110,8 +118,8 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
             )
             db.add(reporte)
             db.commit()
-        ruta = descargar_foto(msg["image"]["id"])
-        db.add(Foto(reporte_id=reporte.id, ruta_local=ruta))
+        datos = descargar_foto(msg["image"]["id"])
+        db.add(Foto(reporte_id=reporte.id, datos=datos))
         db.commit()
         enviar_texto(telefono, f"📷 Foto recibida y anexada a tu reporte de hoy ({len(reporte.fotos)} en total).")
 

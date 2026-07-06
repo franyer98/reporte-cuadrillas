@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -44,6 +45,7 @@ class Foto(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     reporte_id: Mapped[int] = mapped_column(ForeignKey("reportes.id"), index=True)
-    ruta_local: Mapped[str] = mapped_column(String(300))
+    ruta_local: Mapped[str] = mapped_column(String(300), default="")
+    datos: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)  # JPEG comprimido, persistente
 
     reporte: Mapped["Reporte"] = relationship(back_populates="fotos")

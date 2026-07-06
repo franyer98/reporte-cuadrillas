@@ -35,12 +35,18 @@ def enviar_texto(telefono: str, texto: str) -> None:
         logger.error(f"WHATSAPP SEND EXCEPCIÓN: {e}")
 
 
-def descargar_foto(media_id: str) -> str:
-    """Descarga una imagen recibida y devuelve la ruta local."""
-    meta = httpx.get(f"{GRAPH}/{media_id}", headers=HEADERS, timeout=15).json()
-    binario = httpx.get(meta["url"], headers=HEADERS, timeout=30).content
-    os.makedirs(settings.FOTOS_DIR, exist_ok=True)
-    ruta = os.path.join(settings.FOTOS_DIR, f"{uuid.uuid4().hex}.jpg")
-    with open(ruta, "wb") as f:
-        f.write(binario)
-    return ruta
+def descargar_foto(media_id: str) -> bytes:
+    """Descarga una imagen recibida y la devuelve comprimida (JPEG) para
+    almacenarla en la base de datos de forma persistente."""
+    import io
+
+    from PIL import Image
+
+    headers = {"Authorization": f"Bearer {settings.WHATSAPP_TOKEN}"}
+    meta = httpx.get(f"{GRAPH}/{media_id}", headers=headers, timeout=15).json()
+    binario = httpx.get(meta["url"], headers=headers, timeout=30).content
+    img = Image.open(io.BytesIO(binario))
+    img.thumbnail((1024, 1024))  # tamaño máximo razonable para reportes
+    salida = io.BytesIO()
+    img.convert("RGB").save(salida, "JPEG", quality=80)
+    return salida.getvalue()

@@ -18,13 +18,20 @@ GRIS = "F2F2F2"
 FOTO_ANCHO_PX = 220
 
 
-def _miniatura(ruta: str, destino_dir: str) -> str | None:
-    """Genera una miniatura para no inflar el Excel con fotos de varios MB."""
+def _miniatura(foto, destino_dir: str) -> str | None:
+    """Genera una miniatura para no inflar el Excel con fotos de varios MB.
+    Usa los bytes persistentes de la BD; si no existen, intenta la ruta local."""
+    import io
     try:
-        img = PilImage.open(ruta)
+        if getattr(foto, "datos", None):
+            img = PilImage.open(io.BytesIO(foto.datos))
+            nombre = f"foto_{foto.id}.jpg"
+        else:
+            img = PilImage.open(foto.ruta_local)
+            nombre = "mini_" + os.path.basename(foto.ruta_local)
         img.thumbnail((FOTO_ANCHO_PX, FOTO_ANCHO_PX * 3))
         os.makedirs(destino_dir, exist_ok=True)
-        salida = os.path.join(destino_dir, "mini_" + os.path.basename(ruta))
+        salida = os.path.join(destino_dir, nombre)
         img.convert("RGB").save(salida, "JPEG", quality=80)
         return salida
     except Exception:
@@ -99,7 +106,7 @@ def generar_excel(db: Session, fecha: str, salida: str = "reporte.xlsx") -> str:
         alto = max(60, 18 * (texto_act.count("\n") + 2))
         offset_y = 4
         for foto in r.fotos[:3]:
-            mini = _miniatura(foto.ruta_local, mini_dir)
+            mini = _miniatura(foto, mini_dir)
             if mini:
                 img = XlsxImage(mini)
                 img.anchor = f"F{fila}"
