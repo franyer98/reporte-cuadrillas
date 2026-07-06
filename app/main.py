@@ -104,11 +104,18 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
         db.commit()
 
         n_act = len(json.loads(reporte.actividades_json))
-        aviso_tardio = (f"\n⚠️ Registrado como EXTEMPORÁNEO ({hora[:5]})."
-                        if estado == EstadoHorario.TARDIO else "")
+        es_anexo = reporte.hora_recepcion != hora  # ya existía un reporte previo hoy
+        if es_anexo and estado != EstadoHorario.A_TIEMPO:
+            # El reporte del día conserva su estado original; esto es solo un anexo tardío
+            aviso = (f"\nℹ️ Anexado fuera de horario ({hora[:5]}); tu reporte de hoy "
+                     f"conserva la hora original ({reporte.hora_recepcion[:5]}).")
+        elif estado == EstadoHorario.TARDIO:
+            aviso = f"\n⚠️ Registrado como EXTEMPORÁNEO ({hora[:5]})."
+        else:
+            aviso = ""
         enviar_texto(telefono,
             f"✅ Reporte recibido, {cuadrilla.nombre}: {n_act} actividad(es) registradas."
-            + aviso_tardio)
+            + aviso)
 
     elif msg.get("type") == "image":
         if not reporte:
