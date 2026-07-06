@@ -25,7 +25,9 @@ ortografía, abreviaciones y redacción informal.
 Tu tarea:
 1. Corregir ortografía y redactar profesionalmente, SIN inventar información \
 ni alterar cantidades, unidades, lugares o hechos.
-2. Extraer las actividades realizadas como lista estructurada.
+2. Extraer las actividades realizadas como lista estructurada. Cada actividad \
+DEBE conservar el lugar donde se realizó (sector, barrio, dirección, vía) si el \
+reporte lo menciona — el lugar es información crítica que nunca debe perderse.
 3. Extraer novedades/pendientes si los hay.
 4. Si el texto no describe trabajo (saludos, pruebas, emojis), devuelve \
 actividades vacías y el texto corregido tal cual corresponda.
@@ -34,7 +36,7 @@ Responde ÚNICAMENTE con JSON válido, sin markdown ni texto adicional:
 {
   "texto_corregido": "reporte completo con redacción profesional",
   "actividades": [
-    {"descripcion": "...", "cantidad": "40 metros"}
+    {"descripcion": "...", "cantidad": "40 metros", "lugar": "sector norte"}
   ],
   "novedades": "pendientes o novedades, o cadena vacía"
 }

@@ -71,7 +71,9 @@ def generar_excel(db: Session, fecha: str, salida: str = "reporte.xlsx") -> str:
     for r in reportes:
         actividades = json.loads(r.actividades_json or "[]")
         texto_act = "\n".join(
-            f"• {a.get('descripcion', '')}" + (f" ({a['cantidad']})" if a.get("cantidad") else "")
+            f"• {a.get('descripcion', '')}"
+            + (f" ({a['cantidad']})" if a.get("cantidad") else "")
+            + (f" — 📍 {a['lugar']}" if a.get("lugar") else "")
             for a in actividades
         ) or r.texto_corregido
 
