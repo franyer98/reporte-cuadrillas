@@ -148,6 +148,69 @@ def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
 
 
 
+
+
+# ---------- Historial: página con todos los días de reportes ----------
+@app.get("/reportes")
+def historial_reportes(db: Session = Depends(get_db)):
+    """Página HTML con el historial de días que tienen reportes y su Excel."""
+    from fastapi.responses import HTMLResponse
+    from sqlalchemy import func
+
+    filas = (
+        db.query(
+            Reporte.fecha,
+            func.count(Reporte.id),
+            func.sum(func.case((Reporte.estado_horario == "TARDIO", 1), else_=0))
+            if False else func.count(Reporte.id),
+        )
+        .group_by(Reporte.fecha)
+        .order_by(Reporte.fecha.desc())
+        .all()
+    )
+    # Conteo de tardíos por fecha
+    tardios = dict(
+        db.query(Reporte.fecha, func.count(Reporte.id))
+        .filter(Reporte.estado_horario == "TARDIO")
+        .group_by(Reporte.fecha)
+        .all()
+    )
+
+    items = "".join(
+        f"""<li>
+            <span class='fecha'>📅 {fecha}</span>
+            <span class='meta'>{total} reporte(s){f" · ⚠️ {tardios[fecha]} tardío(s)" if tardios.get(fecha) else ""}</span>
+            <a class='btn' href='/excel?fecha={fecha}'>⬇️ Descargar Excel</a>
+        </li>"""
+        for fecha, total, _ in filas
+    ) or "<li class='vacio'>Aún no hay reportes registrados.</li>"
+
+    html = f"""<!doctype html>
+<html lang='es'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Historial de Reportes — Cuadrillas</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #0D1220; color: #E8ECF4;
+         max-width: 640px; margin: 0 auto; padding: 24px 16px; }}
+  h1 {{ font-size: 1.4rem; }} h1 span {{ color: #8B9DFF; }}
+  ul {{ list-style: none; padding: 0; }}
+  li {{ background: #1B2438; border: 1px solid #39465F; border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 10px; display: flex;
+        align-items: center; gap: 12px; flex-wrap: wrap; }}
+  .fecha {{ font-weight: 600; }}
+  .meta {{ color: #8A93A6; font-size: .9rem; flex: 1; }}
+  .btn {{ background: #6C82F5; color: #0D1220; font-weight: 600; text-decoration: none;
+          padding: 8px 14px; border-radius: 10px; font-size: .9rem; }}
+  .vacio {{ color: #8A93A6; justify-content: center; }}
+</style></head>
+<body>
+  <h1>📋 <span>Reporte</span> Cuadrillas — Historial</h1>
+  <p style='color:#8A93A6'>Toca cualquier día para descargar su Excel con todos los reportes.</p>
+  <ul>{items}</ul>
+</body></html>"""
+    return HTMLResponse(html)
+
+
 @app.get("/")
 def health():
     return {"status": "ok", "app": "Reporte Cuadrillas"}
