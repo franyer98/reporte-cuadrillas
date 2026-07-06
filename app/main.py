@@ -148,25 +148,6 @@ def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
 
 
 
-# ---------- Utilidad temporal: suscribir la app a la cuenta de WhatsApp Business ----------
-@app.get("/admin/subscribe")
-def suscribir_waba(waba_id: str):
-    """Suscribe esta app a los webhooks de la cuenta de WhatsApp Business (WABA).
-    Paso necesario una sola vez; requiere WHATSAPP_TOKEN válido."""
-    import httpx as _httpx
-    r = _httpx.post(
-        f"https://graph.facebook.com/v21.0/{waba_id}/subscribed_apps",
-        headers={"Authorization": f"Bearer {settings.WHATSAPP_TOKEN}"},
-        timeout=15,
-    )
-    estado = _httpx.get(
-        f"https://graph.facebook.com/v21.0/{waba_id}/subscribed_apps",
-        headers={"Authorization": f"Bearer {settings.WHATSAPP_TOKEN}"},
-        timeout=15,
-    )
-    return {"suscripcion": r.json(), "apps_suscritas": estado.json()}
-
-
 @app.get("/")
 def health():
     return {"status": "ok", "app": "Reporte Cuadrillas"}
