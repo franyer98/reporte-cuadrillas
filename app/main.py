@@ -109,6 +109,16 @@ async def recibir(request: Request, db: Session = Depends(get_db)):
                 db.commit()
         except Exception as e:
             logger.error(f"ERROR procesando mensaje: {e}")
+            db.rollback()  # limpia la sesión por si la transacción quedó rota
+            telefono = msg.get("from")
+            if telefono:
+                try:
+                    enviar_texto(telefono,
+                        "⚠️ Hubo un problema técnico procesando tu reporte y NO fue "
+                        "registrado. Por favor reenvíalo en unos minutos. Si el "
+                        "problema persiste, contacta a tu supervisor.")
+                except Exception as e2:
+                    logger.error(f"No se pudo notificar el error al usuario: {e2}")
     return {"status": "ok"}
 
 
