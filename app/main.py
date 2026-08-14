@@ -84,6 +84,14 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
 
     if msg.get("type") == "text":
         texto = msg["text"]["body"]
+
+        if reporte and texto.strip() == reporte.texto_original.strip().split("\n")[-1].strip():
+            n_act = len(json.loads(reporte.actividades_json))
+            enviar_texto(telefono,
+                f"↩️ Este mensaje ya estaba registrado ({n_act} actividad(es) en tu reporte de hoy). "
+                "No se duplicó.")
+            return
+
         datos = extraer_reporte(texto)
         if reporte:
             reporte.texto_original += "\n" + texto
