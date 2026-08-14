@@ -188,8 +188,7 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
 
 # ---------- Administración (requiere usuario/clave) ----------
 @app.post("/cuadrillas")
-def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db),
-                         _: str = Depends(verificar_admin)):
+def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db)):
     """Registra una cuadrilla: nombre + número de WhatsApp (ej. 573001234567)."""
     if db.query(Cuadrilla).filter(Cuadrilla.telefono == telefono).first():
         raise HTTPException(409, "Ese teléfono ya está registrado")
@@ -200,14 +199,14 @@ def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db
 
 
 @app.get("/cuadrillas")
-def listar_cuadrillas(db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
+def listar_cuadrillas(db: Session = Depends(get_db)):
     return [{"id": c.id, "nombre": c.nombre, "telefono": c.telefono}
             for c in db.query(Cuadrilla).order_by(Cuadrilla.nombre)]
 
 
 @app.get("/excel")
 def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
-                    db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
+                    db: Session = Depends(get_db)):
     """Genera y descarga el Excel del día indicado."""
     ruta = generar_excel(db, fecha, salida=f"reporte_{fecha}.xlsx")
     return FileResponse(ruta, filename=f"reporte_cuadrillas_{fecha}.xlsx")
@@ -223,7 +222,7 @@ def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
 
 # ---------- Historial: página con todos los días de reportes ----------
 @app.get("/reportes")
-def historial_reportes(db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
+def historial_reportes(db: Session = Depends(get_db)):
     """Página HTML con el historial de días que tienen reportes y su Excel."""
     from fastapi.responses import HTMLResponse
     from sqlalchemy import func
