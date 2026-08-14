@@ -49,3 +49,13 @@ class Foto(Base):
     datos: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)  # JPEG comprimido, persistente
 
     reporte: Mapped["Reporte"] = relationship(back_populates="fotos")
+
+
+class MensajeProcesado(Base):
+    """Registro de IDs de mensajes de WhatsApp ya procesados, para deduplicar
+    reintentos del webhook (Meta puede reenviar el mismo mensaje si no
+    responde a tiempo). El id de WhatsApp es único por mensaje."""
+    __tablename__ = "mensajes_procesados"
+
+    whatsapp_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    procesado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
