@@ -14,7 +14,7 @@ from app.config import settings
 from app.db import Base, engine, get_db
 from app.excel import generar_excel
 from app.extraction import extraer_reporte
-from app.models import Cuadrilla, Foto, Reporte
+from app.models import Cuadrilla, Foto, MensajeProcesado, Reporte
 from app.schedule import EstadoHorario, ahora_local, evaluar_horario
 from app.whatsapp import descargar_foto, enviar_texto
 
@@ -96,9 +96,17 @@ async def recibir(request: Request, db: Session = Depends(get_db)):
 
     logger.info(f"Webhook: {len(mensajes)} mensaje(s) recibido(s)")
     for msg in mensajes:
+        msg_id = msg.get("id")
+        if msg_id and db.get(MensajeProcesado, msg_id):
+            logger.info(f"Mensaje {msg_id} ya procesado antes; se ignora (reintento de WhatsApp)")
+            continue
+
         logger.info(f"Mensaje de {msg.get('from')} tipo {msg.get('type')}")
         try:
             _procesar_mensaje(msg, db)
+            if msg_id:
+                db.add(MensajeProcesado(whatsapp_id=msg_id))
+                db.commit()
         except Exception as e:
             logger.error(f"ERROR procesando mensaje: {e}")
     return {"status": "ok"}
@@ -131,14 +139,6 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
 
     if msg.get("type") == "text":
         texto = msg["text"]["body"]
-
-        if reporte and texto.strip() == reporte.texto_original.strip().split("\n")[-1].strip():
-            n_act = len(json.loads(reporte.actividades_json))
-            enviar_texto(telefono,
-                f"↩️ Este mensaje ya estaba registrado ({n_act} actividad(es) en tu reporte de hoy). "
-                "No se duplicó.")
-            return
-
         datos = extraer_reporte(texto)
         if reporte:
             reporte.texto_original += "\n" + texto
