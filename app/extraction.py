@@ -10,12 +10,33 @@ Proveedores soportados (se usa el que tenga clave configurada):
 """
 import json
 import logging
+import time
 
 import httpx
 
 from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
+
+ERRORES_TRANSITORIOS = (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError)
+
+
+def _con_reintentos(func, intentos: int = 3, espera_base: float = 1.5):
+    """Ejecuta func() reintentando ante errores de red transitorios
+    (timeouts, caídas de conexión). No reintenta errores de otro tipo
+    (ej. clave inválida, request mal formado)."""
+    for intento in range(1, intentos + 1):
+        try:
+            return func()
+        except ERRORES_TRANSITORIOS as e:
+            if intento == intentos:
+                raise
+            espera = espera_base * intento
+            logger.warning(
+                f"IA: intento {intento}/{intentos} falló ({type(e).__name__}); "
+                f"reintentando en {espera:.1f}s"
+            )
+            time.sleep(espera)
 
 PROMPT = """Eres un asistente que procesa reportes diarios de cuadrillas de campo.
 
@@ -61,16 +82,19 @@ def _parsear(contenido: str, texto_crudo: str) -> dict:
 
 
 def _extraer_con_gemini(texto_crudo: str) -> dict:
-    r = httpx.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-2.5-flash-lite:generateContent",
-        headers={"x-goog-api-key": settings.GEMINI_API_KEY},
-        json={
-            "contents": [{"parts": [{"text": PROMPT + texto_crudo}]}],
-            "generationConfig": {"responseMimeType": "application/json"},
-        },
-        timeout=30,
-    )
+    def _llamar():
+        return httpx.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-2.5-flash-lite:generateContent",
+            headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+            json={
+                "contents": [{"parts": [{"text": PROMPT + texto_crudo}]}],
+                "generationConfig": {"responseMimeType": "application/json"},
+            },
+            timeout=30,
+        )
+
+    r = _con_reintentos(_llamar)
     if r.status_code >= 400:
         logger.error(f"GEMINI FALLÓ [{r.status_code}]: {r.text[:300]}")
         return {"texto_corregido": texto_crudo, **FALLBACK}
@@ -82,11 +106,30 @@ def _extraer_con_claude(texto_crudo: str) -> dict:
     import anthropic
 
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    respuesta = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": PROMPT + texto_crudo}],
-    )
+
+    def _llamar():
+        return client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": PROMPT + texto_crudo}],
+        )
+
+    errores_claude = (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                       anthropic.InternalServerError)
+    respuesta = None
+    for intento in range(1, 4):
+        try:
+            respuesta = _llamar()
+            break
+        except errores_claude as e:
+            if intento == 3:
+                raise
+            espera = 1.5 * intento
+            logger.warning(
+                f"Claude: intento {intento}/3 falló ({type(e).__name__}); "
+                f"reintentando en {espera:.1f}s"
+            )
+            time.sleep(espera)
     return _parsear(respuesta.content[0].text, texto_crudo)
 
 
