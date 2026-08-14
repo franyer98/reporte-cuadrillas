@@ -226,6 +226,6 @@ def historial_reportes(db: Session = Depends(get_db)):
     return HTMLResponse(html)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok", "app": "Reporte Cuadrillas"}
