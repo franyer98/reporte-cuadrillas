@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     REPORT_GRACE_MINUTES: int = 30
     DATABASE_URL: str = ""
     FOTOS_DIR: str = "data/fotos"
+    ADMIN_USER: str = "admin"
+    ADMIN_PASSWORD: str = ""  # vacío = endpoints de administración bloqueados por defecto
+    WHATSAPP_APP_SECRET: str = ""  # App Secret de Meta, para verificar firma del webhook
 
     class Config:
         env_file = ".env"
