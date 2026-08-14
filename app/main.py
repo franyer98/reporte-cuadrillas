@@ -1,9 +1,13 @@
 """Webhook de WhatsApp Cloud API + endpoints de administración."""
+import hashlib
+import hmac
 import json
 import logging
+import secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -13,6 +17,42 @@ from app.extraction import extraer_reporte
 from app.models import Cuadrilla, Foto, Reporte
 from app.schedule import EstadoHorario, ahora_local, evaluar_horario
 from app.whatsapp import descargar_foto, enviar_texto
+
+security = HTTPBasic()
+
+
+def verificar_admin(credenciales: HTTPBasicCredentials = Depends(security)) -> str:
+    """Protege endpoints de administración con usuario/clave (HTTP Basic Auth).
+    Si ADMIN_PASSWORD no está configurada, bloquea el acceso por defecto
+    en vez de dejarlo abierto."""
+    if not settings.ADMIN_PASSWORD:
+        raise HTTPException(
+            503,
+            "Este endpoint requiere configurar ADMIN_PASSWORD en las variables "
+            "de entorno del servidor antes de poder usarse.",
+        )
+    usuario_ok = secrets.compare_digest(credenciales.username, settings.ADMIN_USER)
+    clave_ok = secrets.compare_digest(credenciales.password, settings.ADMIN_PASSWORD)
+    if not (usuario_ok and clave_ok):
+        raise HTTPException(401, "Credenciales inválidas",
+                             headers={"WWW-Authenticate": "Basic"})
+    return credenciales.username
+
+
+def verificar_firma_whatsapp(cuerpo: bytes, firma_header: str | None) -> bool:
+    """Verifica que el payload realmente venga de Meta usando HMAC-SHA256
+    con el App Secret. Si WHATSAPP_APP_SECRET no está configurado, no
+    verifica (modo compatibilidad) pero deja constancia en el log."""
+    if not settings.WHATSAPP_APP_SECRET:
+        logger.warning("WHATSAPP_APP_SECRET no configurado: firma del webhook NO verificada")
+        return True
+    if not firma_header or not firma_header.startswith("sha256="):
+        return False
+    firma_esperada = hmac.new(
+        settings.WHATSAPP_APP_SECRET.encode(), cuerpo, hashlib.sha256
+    ).hexdigest()
+    firma_recibida = firma_header.removeprefix("sha256=")
+    return hmac.compare_digest(firma_esperada, firma_recibida)
 
 Base.metadata.create_all(bind=engine)
 
@@ -40,11 +80,18 @@ def verificar(request: Request):
 
 # ---------- Recepción de mensajes ----------
 @app.post("/webhook")
-def recibir(payload: dict, db: Session = Depends(get_db)):
+async def recibir(request: Request, db: Session = Depends(get_db)):
+    cuerpo = await request.body()
+    firma = request.headers.get("X-Hub-Signature-256")
+    if not verificar_firma_whatsapp(cuerpo, firma):
+        logger.error("Webhook rechazado: firma inválida")
+        raise HTTPException(403, "Firma inválida")
+
     try:
+        payload = json.loads(cuerpo)
         cambios = payload["entry"][0]["changes"][0]["value"]
         mensajes = cambios.get("messages", [])
-    except (KeyError, IndexError):
+    except (KeyError, IndexError, json.JSONDecodeError):
         return {"status": "ignored"}
 
     logger.info(f"Webhook: {len(mensajes)} mensaje(s) recibido(s)")
@@ -139,9 +186,10 @@ def _procesar_mensaje(msg: dict, db: Session) -> None:
         enviar_texto(telefono, f"📷 Foto recibida y anexada a tu reporte de hoy ({len(reporte.fotos)} en total).")
 
 
-# ---------- Administración ----------
+# ---------- Administración (requiere usuario/clave) ----------
 @app.post("/cuadrillas")
-def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db)):
+def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db),
+                         _: str = Depends(verificar_admin)):
     """Registra una cuadrilla: nombre + número de WhatsApp (ej. 573001234567)."""
     if db.query(Cuadrilla).filter(Cuadrilla.telefono == telefono).first():
         raise HTTPException(409, "Ese teléfono ya está registrado")
@@ -152,14 +200,14 @@ def registrar_cuadrilla(nombre: str, telefono: str, db: Session = Depends(get_db
 
 
 @app.get("/cuadrillas")
-def listar_cuadrillas(db: Session = Depends(get_db)):
+def listar_cuadrillas(db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
     return [{"id": c.id, "nombre": c.nombre, "telefono": c.telefono}
             for c in db.query(Cuadrilla).order_by(Cuadrilla.nombre)]
 
 
 @app.get("/excel")
 def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
-                    db: Session = Depends(get_db)):
+                    db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
     """Genera y descarga el Excel del día indicado."""
     ruta = generar_excel(db, fecha, salida=f"reporte_{fecha}.xlsx")
     return FileResponse(ruta, filename=f"reporte_cuadrillas_{fecha}.xlsx")
@@ -175,7 +223,7 @@ def descargar_excel(fecha: str = Query(..., description="YYYY-MM-DD"),
 
 # ---------- Historial: página con todos los días de reportes ----------
 @app.get("/reportes")
-def historial_reportes(db: Session = Depends(get_db)):
+def historial_reportes(db: Session = Depends(get_db), _: str = Depends(verificar_admin)):
     """Página HTML con el historial de días que tienen reportes y su Excel."""
     from fastapi.responses import HTMLResponse
     from sqlalchemy import func
