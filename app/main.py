@@ -268,6 +268,7 @@ def historial_reportes(db: Session = Depends(get_db)):
         f"""<li>
             <span class='fecha'>📅 {fecha}</span>
             <span class='meta'>{total} reporte(s){f" · ⚠️ {tardios[fecha]} tardío(s)" if tardios.get(fecha) else ""}</span>
+            <a class='btn btn-ver' href='/reportes/{fecha}'>👁️ Ver</a>
             <a class='btn' href='/excel?fecha={fecha}'>⬇️ Descargar Excel</a>
         </li>"""
         for fecha, total, _ in filas
@@ -289,12 +290,110 @@ def historial_reportes(db: Session = Depends(get_db)):
   .meta {{ color: #8A93A6; font-size: .9rem; flex: 1; }}
   .btn {{ background: #6C82F5; color: #0D1220; font-weight: 600; text-decoration: none;
           padding: 8px 14px; border-radius: 10px; font-size: .9rem; }}
+  .btn-ver {{ background: transparent; color: #8B9DFF; border: 1px solid #6C82F5; }}
   .vacio {{ color: #8A93A6; justify-content: center; }}
 </style></head>
 <body>
   <h1>📋 <span>Reporte</span> Cuadrillas — Historial</h1>
   <p style='color:#8A93A6'>Toca cualquier día para descargar su Excel con todos los reportes.</p>
   <ul>{items}</ul>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/reportes/{fecha}")
+def ver_reporte(fecha: str, db: Session = Depends(get_db)):
+    """Visualizador HTML del reporte del día: mismo contenido del Excel,
+    pero para revisar rápido desde el navegador sin descargar nada."""
+    import base64
+    from fastapi.responses import HTMLResponse
+
+    reportes = (
+        db.query(Reporte).filter(Reporte.fecha == fecha).join(Cuadrilla)
+        .order_by(Cuadrilla.nombre).all()
+    )
+    todas = db.query(Cuadrilla).order_by(Cuadrilla.nombre).all()
+    reportaron = {r.cuadrilla_id for r in reportes}
+    faltantes = [c.nombre for c in todas if c.id not in reportaron]
+
+    def _fotos_html(fotos):
+        imgs = ""
+        for f in fotos[:6]:
+            if f.datos:
+                b64 = base64.b64encode(f.datos).decode()
+                imgs += f"<img src='data:image/jpeg;base64,{b64}' class='foto' />"
+        return f"<div class='fotos'>{imgs}</div>" if imgs else ""
+
+    tarjetas = ""
+    for r in reportes:
+        actividades = json.loads(r.actividades_json or "[]")
+        lista_act = "".join(
+            f"<li>{a.get('descripcion', '')}"
+            + (f" <b>({a['cantidad']})</b>" if a.get("cantidad") else "")
+            + (f" — 📍 {a['lugar']}" if a.get("lugar") else "")
+            + "</li>"
+            for a in actividades
+        ) or f"<li class='sin-estructurar'>{r.texto_corregido or r.texto_original}</li>"
+
+        tardio = r.estado_horario == "TARDIO"
+        tarjetas += f"""
+        <div class='card {"tardio" if tardio else ""}'>
+          <div class='card-head'>
+            <span class='nombre'>{r.cuadrilla.nombre}</span>
+            <span class='hora'>{r.hora_recepcion[:5]}{" ⚠️ EXTEMPORÁNEO" if tardio else ""}</span>
+          </div>
+          <ul class='actividades'>{lista_act}</ul>
+          {f"<p class='novedades'>📝 {r.novedades}</p>" if r.novedades else ""}
+          {_fotos_html(r.fotos)}
+        </div>"""
+
+    if faltantes:
+        tarjetas += f"""
+        <div class='card sin-reporte'>
+          <div class='card-head'><span class='nombre'>⛔ Sin reporte</span></div>
+          <p>{', '.join(faltantes)}</p>
+        </div>"""
+
+    html = f"""<!doctype html>
+<html lang='es'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Reporte {fecha} — Cuadrillas</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #0D1220; color: #E8ECF4;
+         max-width: 720px; margin: 0 auto; padding: 24px 16px; }}
+  h1 {{ font-size: 1.3rem; }} h1 span {{ color: #8B9DFF; }}
+  .top {{ display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }}
+  .top a {{ color: #8B9DFF; text-decoration: none; font-size: .9rem; }}
+  .btn {{ background: #6C82F5; color: #0D1220; font-weight: 600; text-decoration: none;
+          padding: 8px 14px; border-radius: 10px; font-size: .9rem; }}
+  .card {{ background: #1B2438; border: 1px solid #39465F; border-radius: 14px;
+           padding: 16px; margin-bottom: 14px; }}
+  .card.tardio {{ border-color: #C0392B; background: #241A1A; }}
+  .card.sin-reporte {{ border-color: #C0392B; background: #241A1A; }}
+  .card-head {{ display: flex; justify-content: space-between; align-items: center;
+                margin-bottom: 8px; flex-wrap: wrap; gap: 6px; }}
+  .nombre {{ font-weight: 700; font-size: 1.05rem; }}
+  .hora {{ color: #8A93A6; font-size: .85rem; }}
+  .actividades {{ margin: 0; padding-left: 20px; }}
+  .actividades li {{ margin-bottom: 4px; line-height: 1.4; }}
+  .sin-estructurar {{ color: #8A93A6; font-style: italic; }}
+  .novedades {{ margin-top: 10px; color: #F5C77E; font-size: .9rem; }}
+  .fotos {{ display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }}
+  .foto {{ width: 90px; height: 90px; object-fit: cover; border-radius: 8px;
+           border: 1px solid #39465F; }}
+  .vacio {{ color: #8A93A6; text-align: center; padding: 30px 0; }}
+</style></head>
+<body>
+  <div class='top'>
+    <h1>📅 <span>Reporte</span> {fecha}</h1>
+    <div>
+      <a href='/reportes'>← Historial</a>
+      &nbsp;·&nbsp;
+      <a class='btn' href='/excel?fecha={fecha}'>⬇️ Excel</a>
+    </div>
+  </div>
+  {tarjetas or "<p class='vacio'>No hay reportes registrados este día.</p>"}
 </body></html>"""
     return HTMLResponse(html)
 
